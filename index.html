@@ -35,7 +35,7 @@
     touch-action:none;user-select:none;-webkit-user-select:none;cursor:pointer;
   }
   .tbtn:active{background:rgba(90,140,255,.5);}
-  #btnBomb{right:12px;bottom:12px;width:74px;height:74px;font-size:10px;line-height:1.4;}
+  #btnBomb{left:12px;bottom:12px;width:74px;height:74px;font-size:10px;line-height:1.4;}
   #btnBomb b{display:block;font-size:13px;}
   #btnPause{right:12px;top:12px;width:44px;height:44px;font-size:14px;line-height:40px;}
   #btnMute{left:12px;top:12px;width:44px;height:44px;font-size:16px;line-height:40px;}
@@ -429,6 +429,7 @@ function pShot(x, y, ang, spd, dmg) {
   pBullets.push({ x, y, vx: Math.sin(ang) * spd, vy: -Math.cos(ang) * spd, dmg: dmg });
 }
 function eShot(x, y, ang, spd, col, r, homing) {
+  if (eBullets.length > 1200) return; // safety cap so phones keep 60fps
   eBullets.push({ x, y, vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
     col: col || '#ffd24d', r: r || 4, homing: homing || 0, t: 0 });
 }
@@ -445,26 +446,26 @@ function makeEnemy(kind, x, y, o) {
 function aimAng(e) { return Math.atan2(player.y - e.y, player.x - e.x); }
 
 function spawnFormation() {
-  for (let i = 0; i < 10; i++)
-    enemies.push(makeEnemy('grunt', W / 2 + (i - 4.5) * 38, -30 - Math.abs(i - 4.5) * 14, { vy: 70 + stage * 4 }));
+  for (let i = 0; i < 12; i++)
+    enemies.push(makeEnemy('grunt', W / 2 + (i - 5.5) * 32, -30 - Math.abs(i - 5.5) * 14, { vy: 70 + stage * 4 }));
 }
 function spawnV() {
-  for (let i = 0; i < 14; i++)
-    enemies.push(makeEnemy('grunt', W / 2 + (i - 6.5) * 30, -30 - Math.abs(i - 6.5) * 16,
-      { vy: 75 + stage * 4, vx: (i - 6.5) * 6 }));
+  for (let i = 0; i < 16; i++)
+    enemies.push(makeEnemy('grunt', W / 2 + (i - 7.5) * 25, -30 - Math.abs(i - 7.5) * 16,
+      { vy: 75 + stage * 4, vx: (i - 7.5) * 6 }));
 }
 function spawnWeavers() {
-  const n = (2 + Math.min(2, Math.floor(stage / 2))) * 2;
+  const n = (3 + Math.min(2, Math.floor(stage / 2))) * 2;
   for (let i = 0; i < n; i++)
     enemies.push(makeEnemy('weaver', rand(70, W - 70), -30 - i * 45, { hp: 2, r: 13, vy: 85, score: 150 }));
 }
 function spawnSpinner() {
-  for (let i = 0; i < 2; i++)
-    enemies.push(makeEnemy('spinner', W / 2 + (i === 0 ? -100 : 100), -40 - i * 70, { hp: 8, r: 17, vy: 45, score: 500, spiralDur: 14 }));
+  for (let i = 0; i < 3; i++)
+    enemies.push(makeEnemy('spinner', W / 2 + (i === 0 ? -100 : i === 1 ? 100 : 0), -40 - i * 70, { hp: 8, r: 17, vy: 45, score: 500, spiralDur: 14 }));
 }
 function spawnFlankers() {
   const fromLeft = Math.random() < 0.5;
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     const left = i === 0 ? fromLeft : !fromLeft;
     enemies.push(makeEnemy('flanker', left ? -40 : W + 40, rand(80, 180) + i * 55, {
       hp: 3, r: 14, vy: 15, score: 200, dir: left ? 1 : -1,
@@ -478,7 +479,7 @@ function spawnFlankers() {
   }
 }
 function spawnGunner() {
-  const n = stage >= 4 ? 2 : 1;
+  const n = stage >= 4 ? 3 : 2;
   for (let i = 0; i < n; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     enemies.push(makeEnemy('gunner', W / 2 + side * 130 + rand(-20, 20), -40 - i * 60, {
@@ -490,7 +491,7 @@ function spawnGunner() {
   }
 }
 function spawnSpitter() {
-  const n = stage >= 5 ? 2 : 1;
+  const n = stage >= 5 ? 3 : 2;
   for (let i = 0; i < n; i++) {
     const side = i % 2 === 0 ? -1 : 1;
     enemies.push(makeEnemy('spitter', W / 2 + side * 100 + rand(-25, 25), -40 - i * 80, {
@@ -501,20 +502,20 @@ function spawnSpitter() {
   }
 }
 function spawnMinis() {
-  const n = (4 + Math.min(4, stage)) * 2;
+  const n = (5 + Math.min(4, stage)) * 2;
   for (let i = 0; i < n; i++)
     enemies.push(makeEnemy('mini', rand(40, W - 40), -20 - i * 50, { r: 9, vy: 150 + stage * 12, score: 80 }));
 }
 function spawnDarts() {
-  const n = 3 + Math.min(2, Math.floor(stage / 2));
+  const n = 4 + Math.min(3, Math.floor(stage / 2));
   for (let i = 0; i < n; i++)
     enemies.push(makeEnemy('dart', rand(60, W - 60), -30 - i * 55, {
       hp: 2, r: 11, vy: 95 + stage * 5, score: 120, fireCd: rand(0.3, 0.6) }));
 }
 function spawnMixed() {
   spawnWeavers();
-  for (let i = 0; i < 6; i++)
-    enemies.push(makeEnemy('grunt', W / 2 + (i - 2.5) * 60, -240 - Math.abs(i - 2.5) * 20, { vy: 70 + stage * 4 }));
+  for (let i = 0; i < 8; i++)
+    enemies.push(makeEnemy('grunt', W / 2 + (i - 3.5) * 50, -240 - Math.abs(i - 3.5) * 20, { vy: 70 + stage * 4 }));
 }
 // ------------------------------------------------------------ powerups
 function dropPower(x, y, kind) { powerups.push({ x, y, kind, t: 0 }); }
@@ -529,7 +530,7 @@ function dropRandom(x, y) {
 function spawnBoss() {
   const hp = 180 + stage * 60 + stage * stage * 20; // quadratic scale so late bosses stay punishing
   boss = { x: W / 2, y: -90, hp, maxHp: hp, t: 0, r: 46, entering: true,
-    atk: 0, atkT: 1.5, spiralT: 0, spiralDur: 0, spiralA: 0, phase: 1, die: 0, dieT: 0, aimT: 0.8, fireCd: 1, bigT: 2.5 };
+    atk: 0, atkT: 1.2, spiralT: 0, spiralDur: 0, spiralA: 0, phase: 1, die: 0, dieT: 0, aimT: 0.8, fireCd: 1, bigT: 1.5 };
   banner('WARNING', 2.2);
   sfx.warn();
 }
@@ -570,36 +571,36 @@ function updateBoss(dt) {
     b.spiralDur -= dt;
     b.spiralT -= dt;
     while (b.spiralT <= 0) {
-      b.spiralT += 0.06;
-      b.spiralA += 0.62;
-      const arms = (p3 ? 11 : p2 ? 10 : 8) + (stage - 1);
+      b.spiralT += 0.05;
+      b.spiralA += 0.72;
+      const arms = (p3 ? 13 : p2 ? 12 : 10) + (stage - 1);
       for (let i = 0; i < arms; i++)
         eShot(b.x + Math.cos(b.spiralA + i * 2.094) * 34, b.y + 20 + Math.sin(b.spiralA + i * 2.094) * 20,
-          b.spiralA + i * 2.094, (p3 ? 190 : p2 ? 175 : 150) + (stage - 1) * 10, p2 || p3 ? '#ff5f6d' : '#ffd24d', 4.5);
+          b.spiralA + i * 2.094, (p3 ? 205 : p2 ? 190 : 165) + (stage - 1) * 12, p2 || p3 ? '#ff5f6d' : '#ffd24d', 4.5);
     }
     b.aimT -= dt;
     if (b.aimT <= 0) {
-      b.aimT = p3 ? 0.45 : p2 ? 0.6 : 0.9;
+      b.aimT = Math.max(0.3, (p3 ? 0.35 : p2 ? 0.45 : 0.7) - (stage - 1) * 0.05);
       const a0 = aimAng(b);
-      for (let k = -1; k <= 1; k++)
-        eShot(b.x, b.y + 26, a0 + k * 0.12, 250 + (stage - 1) * 10, '#ff5f6d', 4, p2 || p3 ? 1.0 : 0);
+      for (let k = -2; k <= 2; k++)
+        eShot(b.x, b.y + 26, a0 + k * 0.09, 262 + (stage - 1) * 12, '#ff5f6d', 4, p2 || p3 ? 1.0 : 0);
     }
   } else {
     b.atkT -= dt;
     if (b.atkT <= 0) {
-      b.atkT = (p3 ? 0.65 : p2 ? 0.95 : 1.45) * Math.max(0.35, 1 - (stage - 1) * 0.07);
+      b.atkT = Math.max(0.4, (p3 ? 0.5 : p2 ? 0.75 : 1.1) - (stage - 1) * 0.08);
       b.atk = (b.atk + 1) % 3;
       if (b.atk === 0) {
-        const n = (p2 || p3 ? 44 : 34) + (stage - 1) * 5, sp = (p2 || p3 ? 165 : 140) + (stage - 1) * 8, off = rand(0, Math.PI);
+        const n = (p2 || p3 ? 52 : 42) + (stage - 1) * 5, sp = (p2 || p3 ? 180 : 155) + (stage - 1) * 9, off = rand(0, Math.PI);
         for (let i = 0; i < n; i++) eShot(b.x, b.y + 14, off + i * 6.2832 / n, sp, '#ffd24d', 4.5);
         if (p2 || p3) for (let i = 0; i < n; i++) eShot(b.x, b.y + 14, off + (i + 0.5) * 6.2832 / n, sp * 0.75, '#ff9e5e', 4);
         if (p3) for (let i = 0; i < n; i++) eShot(b.x, b.y + 14, off + i * 6.2832 / n + 3.1416 / n, sp * 1.1, '#ff5f6d', 4.5);
       } else if (b.atk === 1) {
-        const a0 = aimAng(b), n = (p2 || p3 ? 18 : 14) + (stage - 1) * 3, sp = (p2 || p3 ? 260 : 220) + (stage - 1) * 12;
+        const a0 = aimAng(b), n = (p2 || p3 ? 22 : 18) + (stage - 1) * 3, sp = (p2 || p3 ? 275 : 235) + (stage - 1) * 13;
         for (let i = 0; i < n; i++)
           eShot(b.x, b.y + 26, a0 + (i - (n - 1) / 2) * 0.11, sp, '#ff5f6d', 4, p2 || p3 ? 1.2 + (stage - 1) * 0.15 : 0);
       } else {
-        b.spiralDur = p3 ? 2.4 : p2 ? 2.2 : 1.6;
+        b.spiralDur = p3 ? 2.8 : p2 ? 2.5 : 1.9;
         b.spiralT = 0;
       }
     }
@@ -607,17 +608,17 @@ function updateBoss(dt) {
   if (p2 || p3) {
     b.fireCd -= dt;
     if (b.fireCd <= 0) {
-      b.fireCd = p3 ? 0.45 : Math.max(0.45, 0.75 - (stage - 1) * 0.05);
-      const slots = p3 ? [-70, -46.7, -23.3, 0, 23.3, 46.7, 70] : [-60, -36, -12, 12, 36, 60];
+      b.fireCd = p3 ? Math.max(0.3, 0.38 - (stage - 1) * 0.04) : Math.max(0.3, 0.6 - (stage - 1) * 0.06);
+      const slots = p3 ? [-72, -54, -36, -18, 0, 18, 36, 54, 72] : [-64, -42.7, -21.3, 0, 21.3, 42.7, 64];
       for (const gx of slots)
-        eShot(b.x + gx, b.y + 18, Math.atan2(player.y - (b.y + 18), (player.x - (b.x + gx))), 240 + (stage - 1) * 10, '#b388ff', 4, 1.6 + (stage - 1) * 0.12);
+        eShot(b.x + gx, b.y + 18, Math.atan2(player.y - (b.y + 18), (player.x - (b.x + gx))), 255 + (stage - 1) * 11, '#b388ff', 4, 1.8 + (stage - 1) * 0.15);
     }
   }
   b.bigT -= dt;
   if (b.bigT <= 0) {
-    b.bigT = p3 ? 2.0 : p2 ? 2.5 : 3.4 - Math.min(1.2, (stage - 1) * 0.2);
+    b.bigT = Math.max(0.7, (p3 ? 1.1 : p2 ? 1.4 : 2.0) - (stage - 1) * 0.15);
     const a0 = aimAng(b);
-    eShot(b.x, b.y + 26, a0, 135 + (stage - 1) * 10, '#ff5f6d', 13);
+    eShot(b.x, b.y + 26, a0, 150 + (stage - 1) * 12, '#ff5f6d', 15);
   }
 }
 
@@ -890,7 +891,7 @@ function director(dt) {
   if (stageTime >= STAGE_TIME) { if (!bossWarned) { bossWarned = true; spawnBoss(); } return; }
   spawnT -= dt;
   if (spawnT <= 0) {
-    spawnT = rand(1.6, 2.8) - Math.min(0.9, stage * 0.12);
+    spawnT = rand(0.9, 1.7) - Math.min(0.55, (stage - 1) * 0.1);
     const opts = ['formation', 'v', 'weaver', 'mini', 'mixed', 'dart', 'spitter'];
     if (stage >= 2) opts.push('spinner', 'flanker', 'gunner', 'dart');
     if (stage >= 3) opts.push('flanker', 'weaver', 'dart', 'spitter');
