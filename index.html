@@ -915,7 +915,8 @@ function updateBoss(dt) {
   }
   b.bigT -= dt;
   if (b.bigT <= 0) {
-    b.bigT = Math.max(0.7, (p3 ? 1.1 : p2 ? 1.4 : 2.0) - (stage - 1) * 0.15);
+    // big-bullet cadence: stage 1 stays baseline, escalation kicks in from stage 2 and tightens each stage after
+    b.bigT = Math.max(0.5, (p3 ? 1.1 : p2 ? 1.4 : 2.0) - (stage > 1 ? (stage - 1) * 0.28 : 0));
     const a0 = aimAng(b);
     eShot(b.x, b.y + 26, a0, 150 + (stage - 1) * 12, '#ff5f6d', 15);
   }
