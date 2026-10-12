@@ -131,7 +131,7 @@ const sfx = {
 };
 
 // --------------------------------------------------------------- music
-// Procedural chiptune soundtrack (Web Audio only, no assets).
+// Menu: procedural chiptune (Web Audio). Stage & boss: .m4a files next to index.html.
 // One 16-step bar per track; semitone offsets from A1 (bass) / A4 (lead).
 const MUSIC = {
   menu: { bpm: 96, vol: 0.45,
@@ -154,6 +154,27 @@ const MUSIC = {
     hat:   [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
 };
 let mGain = null, mTimer = null, mNextT = 0, mStep = 0, mMode = 'menu', mNoiseBuf = null;
+// File-based tracks: stage & boss play .m4a files that live next to index.html
+const mEls = {
+  play: new Audio('stage.m4a'),
+  boss: new Audio('boss.m4a'),
+};
+const mElSrc = {};
+let mFileGain = null;
+for (const k in mEls) { mEls[k].loop = true; mEls[k].preload = 'auto'; mEls[k].volume = 1; }
+function ensureFileNode(k) {
+  const a = audio();
+  if (!mFileGain) {
+    mFileGain = a.createGain();
+    mFileGain.gain.value = 0;
+    mFileGain.connect(a.destination);
+  }
+  if (!mElSrc[k]) {
+    const s = a.createMediaElementSource(mEls[k]);
+    s.connect(mFileGain);
+    mElSrc[k] = s;
+  }
+}
 function musicStart() {
   const a = audio();
   if (!mGain) {
@@ -208,7 +229,7 @@ function musicTick() {
   const cfg = MUSIC[mMode];
   const stepDur = (60 / cfg.bpm) / 4 * slowmo;   // slows with the death slow-mo
   while (mNextT < a.currentTime + 0.12) {
-    if (!muted && mode !== 'paused') musicStep(mNextT, mStep, stepDur, cfg);
+    if (!muted && mode !== 'paused' && mMode === 'menu') musicStep(mNextT, mStep, stepDur, cfg); // menu chiptune only; stage/boss use .m4a files
     mStep = (mStep + 1) % 16;
     mNextT += stepDur;
   }
@@ -217,9 +238,21 @@ function musicFrame() {
   if (!actx) return;                             // waits for first user gesture
   if (!mTimer) musicStart();
   const want = (mode === 'playing' || mode === 'dying') ? (boss ? 'boss' : 'play') : 'menu';
-  if (want !== mMode) mMode = want;
-  const target = (muted || mode === 'paused') ? 0 : MUSIC[mMode].vol;
+  if (want !== mMode) {
+    mMode = want;
+    if (mEls[mMode]) mEls[mMode].currentTime = 0;   // restart the file track from the beginning
+  }
+  const on = !(muted || mode === 'paused');
+  for (const k in mEls) {                        // stage/boss .m4a files
+    const el = mEls[k];
+    if (k === mMode && on) { ensureFileNode(k); if (el.paused) el.play().catch(() => {}); }
+    else if (!el.paused) el.pause();
+  }
+  const target = (muted || mode === 'paused') ? 0 : (mMode === 'menu' ? MUSIC[mMode].vol : 0);
   mGain.gain.setTargetAtTime(target, actx.currentTime, 0.12);
+  const fileVol = (mMode === 'play' || mMode === 'boss') ? MUSIC[mMode].vol : 0;
+  if (mFileGain)
+    mFileGain.gain.setTargetAtTime((muted || mode === 'paused') ? 0 : fileVol, actx.currentTime, 0.12);
 }
 // ------------------------------------------------------------- state
 let mode = 'menu';                    // menu | playing | paused | dying | gameover
