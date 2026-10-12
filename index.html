@@ -6,6 +6,7 @@
 <title>Daisen Storm — 怒首領蜂 style vertical shooter</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <style>
   html,body{margin:0;height:100%;background:#020308;overflow:hidden;}
   body{display:flex;align-items:center;justify-content:center;}
@@ -20,6 +21,11 @@
     box-shadow:0 0 60px rgba(40,80,255,.25);
     touch-action:none;
   }
+  #bg3d{
+    position:absolute;left:0;top:0;z-index:0;
+    background:transparent;border:none;box-shadow:none;pointer-events:none;
+  }
+  #game{position:relative;z-index:1;background:transparent;}
   #controls{
     position:absolute;left:50%;bottom:-28px;transform:translateX(-50%);
     font-family:monospace;font-size:11px;color:#5a6a9a;white-space:nowrap;
@@ -43,6 +49,7 @@
 </head>
 <body>
 <div id="wrap">
+  <canvas id="bg3d"></canvas>
   <canvas id="game"></canvas>
   <button class="tbtn" id="btnMute">♪</button>
   <button class="tbtn" id="btnPause">❚❚</button>
@@ -81,6 +88,258 @@ const FIRE_CD = 1 / 11;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
+
+// ------------------------------------------------- 3D backdrop (three.js)
+// A transparent WebGL scene layered BEHIND the 2D playfield: parallax
+// starfield flowing downward (the ship flies "up"), a distant planet,
+// rotating energy-gate rings, drifting asteroids and nebulae. If three.js
+// or WebGL is unavailable, bg3d stays null and the pure 2D backdrop is
+// used instead (game still runs fully offline).
+const bg3dCanvas = document.getElementById('bg3d');
+let bg3d = null;
+
+// re-places a building (side lane, or the distant skyline when `far`) + fresh speeds
+function placeCity(b, far) {
+  b.m.position.set(
+    far ? rand(-115, 115) : (Math.random() < 0.5 ? -1 : 1) * rand(26, 62),
+    far ? rand(-95, -50) : rand(-80, 140),
+    far ? rand(-360, -305) : rand(-300, -10)
+  );
+  b.vz = 7 + Math.random() * 8;
+  b.vy = (12 + Math.random() * 20) / (0.55 + 0.45 * (1 - (b.m.position.z + 300) / 290));
+}
+
+function initBG3D() {
+  if (typeof THREE === 'undefined') return;
+  try {
+    const renderer = new THREE.WebGLRenderer({
+      canvas: bg3dCanvas, alpha: true, antialias: true, powerPreference: 'high-performance'
+    });
+    renderer.setClearColor(0x000000, 0);
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050920, 0.007);
+    const camera = new THREE.PerspectiveCamera(62, W / H, 0.1, 700);
+    const CAM_Z = 26;
+    camera.position.set(0, 0, CAM_Z);
+
+    scene.add(new THREE.AmbientLight(0x26325a, 1.4));
+    const sun = new THREE.DirectionalLight(0xbfd4ff, 1.1);
+    sun.position.set(14, 20, 30);
+    scene.add(sun);
+
+    // -- starfield: two parallax layers as THREE.Points
+    function makeStars(n, size, color, opacity, yMin, yMax, zMin, zMax) {
+      const pos = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) {
+        pos[i * 3]     = rand(-75, 75);
+        pos[i * 3 + 1] = rand(yMin, yMax);
+        pos[i * 3 + 2] = rand(zMin, zMax);
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        color, size, sizeAttenuation: true, transparent: true,
+        opacity, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const pts = new THREE.Points(geo, mat);
+      scene.add(pts);
+      return { pos, geo, mat, pts };
+    }
+    const starsFar  = makeStars(650, 1.15, 0xcfe2ff, 0.85, -150, 150, -260, -20);
+    const starsNear = makeStars(130, 2.3, 0xffe9c4, 0.9, -110, 110, -160, -6);
+
+    // -- distant planet + wireframe shell
+    const planet = new THREE.Mesh(
+      new THREE.SphereGeometry(15, 24, 18),
+      new THREE.MeshLambertMaterial({ color: 0x35509c, emissive: 0x0c1638 })
+    );
+    planet.position.set(28, 34, -230);
+    scene.add(planet);
+    const planetWire = new THREE.Mesh(
+      new THREE.SphereGeometry(15.4, 16, 10),
+      new THREE.MeshBasicMaterial({
+        color: 0x6fb4ff, wireframe: true, transparent: true,
+        opacity: 0.08, blending: THREE.AdditiveBlending, depthWrite: false
+      })
+    );
+    planetWire.position.copy(planet.position);
+    scene.add(planetWire);
+
+    // -- soft radial-glow sprite texture (for nebulae + planet halo)
+    function glowTexture(c1, c2) {
+      const c = document.createElement('canvas'); c.width = c.height = 128;
+      const g = c.getContext('2d');
+      const rad = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+      rad.addColorStop(0, c1); rad.addColorStop(1, c2);
+      g.fillStyle = rad; g.fillRect(0, 0, 128, 128);
+      return new THREE.CanvasTexture(c);
+    }
+    function addGlowSprite(x, y, z, scale, c1, opacity) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+        map: glowTexture(c1, 'rgba(0,0,0,0)'), transparent: true,
+        opacity, blending: THREE.AdditiveBlending, depthWrite: false
+      }));
+      sp.position.set(x, y, z);
+      sp.scale.set(scale, scale, 1);
+      scene.add(sp);
+      return sp;
+    }
+    addGlowSprite(28, 34, -244, 110, 'rgba(90,140,255,0.55)', 0.4);      // planet halo
+    const nebA = addGlowSprite(-52, 52, -280, 240, 'rgba(120,70,200,0.40)', 0.35);
+    const nebB = addGlowSprite(55, -45, -290, 260, 'rgba(40,120,190,0.35)', 0.30);
+
+    // -- energy gates: rings of small segments, counter-rotating
+    function makeGate(radius, z, color, opacity, count) {
+      const mat = new THREE.MeshBasicMaterial({
+        color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false
+      });
+      const box = new THREE.BoxGeometry(2.2, 0.7, 0.7);
+      const group = new THREE.Group();
+      for (let i = 0; i < count; i++) {
+        const seg = new THREE.Mesh(box, mat);
+        const a = (i / count) * Math.PI * 2;
+        seg.position.set(Math.cos(a) * radius, Math.sin(a) * radius, 0);
+        seg.rotation.z = a;
+        group.add(seg);
+      }
+      group.position.z = z;
+      scene.add(group);
+      return { group, mat };
+    }
+    const gate1 = makeGate(34, -170, 0x5fd4ff, 0.4, 40);
+    const gate2 = makeGate(22, -215, 0x8f7fff, 0.3, 28);
+
+    // -- night city: window-lit towers flanking the flight path + distant skyline
+    function windowTexture() {
+      const c = document.createElement('canvas'); c.width = 64; c.height = 128;
+      const g = c.getContext('2d');
+      g.fillStyle = '#040813'; g.fillRect(0, 0, 64, 128);
+      for (let y = 5; y < 122; y += 9)
+        for (let x = 5; x < 58; x += 9) {
+          const r = Math.random();
+          if (r >= 0.4) continue;
+          g.fillStyle = r < 0.18 ? 'rgba(255,214,140,0.95)' : 'rgba(140,200,255,0.85)';
+          g.fillRect(x, y, 5, 6);
+        }
+      return new THREE.CanvasTexture(c);
+    }
+    const buildMats = [windowTexture(), windowTexture(), windowTexture()].map(t =>
+      new THREE.MeshLambertMaterial({ color: 0x0a1226, emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.85 }));
+    const cities = [];
+    function addBuilding(far) {
+      const m = new THREE.Mesh(
+        new THREE.BoxGeometry(rand(9, 18), rand(16, far ? 34 : 68), rand(9, 18)),
+        buildMats[(Math.random() * buildMats.length) | 0]
+      );
+      const b = { m };
+      scene.add(m);
+      placeCity(b, far);
+      cities.push(b);
+    }
+    for (let i = 0; i < 34; i++) addBuilding(false);
+    for (let i = 0; i < 22; i++) addBuilding(true);
+
+    // -- drifting low-poly asteroids
+    const rockGeo = new THREE.IcosahedronGeometry(1, 0);
+    const rockMat = new THREE.MeshPhongMaterial({
+      color: 0x4a5a85, flatShading: true, shininess: 10, emissive: 0x101a33
+    });
+    const rocks = [];
+    for (let i = 0; i < 6; i++) {
+      const m = new THREE.Mesh(rockGeo, rockMat);
+      m.position.set(rand(-60, 60), rand(-120, 120), rand(-140, -60));
+      m.scale.setScalar(rand(1.2, 2.6));
+      m.rotation.set(rand(0, 6.28), rand(0, 6.28), 0);
+      scene.add(m);
+      rocks.push({ m, vy: rand(8, 22), rx: rand(-0.4, 0.4), ry: rand(-0.4, 0.4) });
+    }
+
+    bg3d = {
+      renderer, scene, camera, CAM_Z,
+      starsFar, starsNear, planet, planetWire, nebA, nebB, gate1, gate2, rocks, cities,
+      fogBase: new THREE.Color(0x050920), fogBoss: new THREE.Color(0x1c0a14),
+      ringBase: new THREE.Color(0x5fd4ff), ringBoss: new THREE.Color(0xff5f6d),
+      bossT: 0, push: 0
+    };
+    resizeBG3D();
+  } catch (e) { bg3d = null; }
+}
+
+function resizeBG3D() {
+  if (!bg3d) return;
+  const w = bg3dCanvas.clientWidth, h = bg3dCanvas.clientHeight;
+  if (w === 0 || h === 0) return;
+  bg3d.renderer.setSize(w, h, false);
+  bg3d.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  bg3d.camera.aspect = w / h;
+  bg3d.camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resizeBG3D);
+
+function updateBG3D(dt) {
+  if (!bg3d) return;
+  const B = bg3d;
+  const flow = (mode === 'menu' ? 0.45 : 1) * ((bombRing || bigBlast) ? 1.9 : 1);
+
+  // stars: slow galactic spin around the scene (near layer out-paces far one)
+  for (const S of [B.starsFar, B.starsNear]) {
+    const near = (S === B.starsNear);
+    S.pts.rotation.y += (near ? 0.055 : 0.018) * flow * dt;
+    S.pts.rotation.z = Math.sin(frame * (near ? 0.0008 : 0.0005)) * (near ? 0.16 : 0.10);
+  }
+  // twinkle (per layer)
+  B.starsFar.mat.opacity  = 0.75 + 0.2 * Math.sin(frame * 0.05);
+  B.starsNear.mat.opacity = 0.8 + 0.2 * Math.sin(frame * 0.07 + 1.7);
+
+  // city: buildings drift down + toward the camera, wrapping back to the far side
+  for (const b of B.cities) {
+    b.m.position.y -= b.vy * flow * dt;
+    b.m.position.z += b.vz * flow * dt;
+    if (b.m.position.y < -150 || b.m.position.z > 18) {
+      b.vz = 7 + Math.random() * 8;
+      b.vy = 12 + Math.random() * 20;
+      placeCity(b, false);
+    }
+  }
+
+  B.planet.rotation.y += 0.03 * dt;
+  B.planetWire.rotation.y -= 0.05 * dt;
+  B.nebA.position.x += Math.sin(frame * 0.002) * 0.02;
+  B.nebA.position.y -= 1.2 * flow * dt; if (B.nebA.position.y < -120) B.nebA.position.y = 130;
+  B.nebB.position.y -= 1.0 * flow * dt; if (B.nebB.position.y < -120) B.nebB.position.y = 130;
+
+  B.gate1.group.rotation.z += 0.12 * flow * dt;
+  B.gate2.group.rotation.z -= 0.18 * flow * dt;
+
+  for (const r of B.rocks) {
+    r.m.position.y -= r.vy * flow * dt;
+    r.m.rotation.x += r.rx * dt; r.m.rotation.y += r.ry * dt;
+    if (r.m.position.y < -90) {
+      r.m.position.y = rand(100, 140);
+      r.m.position.x = rand(-60, 60);
+      r.m.position.z = rand(-140, -60);
+    }
+  }
+
+  // boss mode: fog + gate rings shift toward red
+  B.bossT += ((boss ? 1 : 0) - B.bossT) * Math.min(1, dt * 1.5);
+  B.scene.fog.color.copy(B.fogBase).lerp(B.fogBoss, B.bossT);
+  B.gate1.mat.color.copy(B.ringBase).lerp(B.ringBoss, B.bossT);
+  B.gate2.mat.color.copy(B.ringBase).lerp(B.ringBoss, B.bossT);
+
+  // camera: gentle parallax to the ship + shake + bomb push-forward
+  B.push += (((bombRing || bigBlast) ? 6 : 0) - B.push) * Math.min(1, dt * 4);
+  const px = (mode === 'playing' || mode === 'dying') ? (player.x - W / 2) / W : 0;
+  const py = (mode === 'playing' || mode === 'dying') ? (player.y - (H - 90)) / H : 0;
+  const shx = shake ? rand(-shake, shake) * 0.12 : 0;
+  const shy = shake ? rand(-shake, shake) * 0.12 : 0;
+  B.camera.position.set(-px * 3 - shx, -py * 2 - shy, B.CAM_Z - B.push);
+  B.camera.lookAt(0, -4, -120);
+
+  B.renderer.render(B.scene, B.camera);
+}
+
+initBG3D();
 
 // --------------------------------------------------------------- audio
 let actx = null;
@@ -161,8 +420,13 @@ const mEls = {
 };
 const mElSrc = {};
 let mFileGain = null;
+// Under file:// the <audio> element has an opaque origin, so createMediaElementSource
+// is blocked (CORS) and outputs zeroes. In that case skip the Web Audio routing
+// entirely and play natively, controlling volume via el.volume instead.
+const useNativeFileAudio = location.protocol === 'file:';
 for (const k in mEls) { mEls[k].loop = true; mEls[k].preload = 'auto'; mEls[k].volume = 1; }
 function ensureFileNode(k) {
+  if (useNativeFileAudio) return;
   const a = audio();
   if (!mFileGain) {
     mFileGain = a.createGain();
@@ -253,6 +517,8 @@ function musicFrame() {
   const fileVol = (mMode === 'play' || mMode === 'boss') ? MUSIC[mMode].vol : 0;
   if (mFileGain)
     mFileGain.gain.setTargetAtTime((muted || mode === 'paused') ? 0 : fileVol, actx.currentTime, 0.12);
+  else if (useNativeFileAudio && mEls[mMode])
+    mEls[mMode].volume = (muted || mode === 'paused') ? 0 : fileVol;
 }
 // ------------------------------------------------------------- state
 let mode = 'menu';                    // menu | playing | paused | dying | gameover
@@ -945,9 +1211,13 @@ function director(dt) {
 }
 // ----------------------------------------------------------------- draw
 function drawBackground(dt) {
+  const gAlpha = bg3d ? 0.5 : 1;   // semi-opaque tint so the 3D scene shows through
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, '#060b1e'); g.addColorStop(0.45, '#0b1634');
-  g.addColorStop(0.75, '#141c40'); g.addColorStop(1, '#0a0d22');
+  g.addColorStop(0, hexToRgba('#060b1e', gAlpha));
+  g.addColorStop(0.45, hexToRgba('#0b1634', gAlpha));
+  g.addColorStop(0.75, hexToRgba('#141c40', gAlpha));
+  g.addColorStop(1, hexToRgba('#0a0d22', gAlpha));
+  if (bg3d) ctx.clearRect(0, 0, W, H);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
   ctx.globalCompositeOperation = 'lighter';
   for (const n of nebulae) {
@@ -961,14 +1231,16 @@ function drawBackground(dt) {
   }
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
-  for (const s of stars) {
-    s.y += s.v * dt * (1 + (bombRing ? 2 : 0));
-    if (s.y > H) { s.y = -2; s.x = rand(0, W); }
-    ctx.globalAlpha = s.a * (0.62 + 0.38 * Math.sin(frame * 0.1 * (s.tw / 2) + s.ph));
-    ctx.fillStyle = s.col;
-    ctx.fillRect(s.x, s.y, s.s, s.s * 2.5);
+  if (!bg3d) {   // the 3D parallax starfield replaces the 2D layer
+    for (const s of stars) {
+      s.y += s.v * dt * (1 + (bombRing ? 2 : 0));
+      if (s.y > H) { s.y = -2; s.x = rand(0, W); }
+      ctx.globalAlpha = s.a * (0.62 + 0.38 * Math.sin(frame * 0.1 * (s.tw / 2) + s.ph));
+      ctx.fillStyle = s.col;
+      ctx.fillRect(s.x, s.y, s.s, s.s * 2.5);
+    }
+    ctx.globalAlpha = 1;
   }
-  ctx.globalAlpha = 1;
   updateComet(dt);
   ctx.drawImage(vignette, 0, 0);
   ctx.globalAlpha = 0.12;
@@ -1426,6 +1698,7 @@ function updateDying(dt) {
 }
 // ---------------------------------------------------------------- render
 function render(dt) {
+  updateBG3D(dt);
   ctx.save();
   if (shake > 0) ctx.translate(rand(-shake, shake) * 0.5, rand(-shake, shake) * 0.5);
   drawBackground(dt);
